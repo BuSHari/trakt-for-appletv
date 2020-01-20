@@ -106,7 +106,10 @@ class ControllingRemoteProtocol(ScrobblingRemoteProtocol):
 
     def prevChapter(self):
         if self.skip_command_supported:
-            self.send_command(CommandInfo_pb2.PreviousChapter)
+            if self.current_player == 'com.plexapp.plex':
+                self.chapterPlex(False)
+            else:
+                self.send_command(CommandInfo_pb2.PreviousChapter)
 
     def nextChapter(self):
         if self.skip_command_supported:
