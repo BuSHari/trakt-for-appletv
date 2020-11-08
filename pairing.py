@@ -7,7 +7,7 @@ import ed25519
 import hashlib
 import pickle
 import binascii
-from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
@@ -41,7 +41,7 @@ def introduce(socket, config):
     device_info.systemBuildVersion = '13G36'
     device_info.applicationBundleIdentifier = 'gr.stig.appletv-scrobbler'
     device_info.protocolVersion = 1
-    device_info.lastSupportedMessageType = 46
+    device_info.lastSupportedMessageType = 72
 
     send(msg, socket)
     receive(socket)
@@ -110,6 +110,7 @@ def pairing(socket, config):
     msg.Extensions[CryptoPairingMessage_pb2.cryptoPairingMessage].status = 0
     msg.Extensions[CryptoPairingMessage_pb2.cryptoPairingMessage].pairingData = tlv_build({kTLVType_Method: b'\x00',
                                                                                            kTLVType_State: b'\x01'})
+    msg.Extensions[CryptoPairingMessage_pb2.cryptoPairingMessage].state = 2
     send(msg, socket)
     msg = receive(socket)
     parsed = tlv_parse(msg.Extensions[CryptoPairingMessage_pb2.cryptoPairingMessage].pairingData)
@@ -193,8 +194,9 @@ def verify(socket, config):
     msg = ProtocolMessage_pb2.ProtocolMessage()
     msg.type = ProtocolMessage_pb2.ProtocolMessage.CRYPTO_PAIRING_MESSAGE
     msg.Extensions[CryptoPairingMessage_pb2.cryptoPairingMessage].status = 0
+    public_key_bytes = randpk.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
     msg.Extensions[CryptoPairingMessage_pb2.cryptoPairingMessage].pairingData = tlv_build(
-        {kTLVType_PublicKey: randpk.public_key().public_bytes(), kTLVType_State: b'\x01'})
+        {kTLVType_PublicKey: public_key_bytes, kTLVType_State: b'\x01'})
 
     send(msg, socket)
     msg = receive(socket)
@@ -212,11 +214,11 @@ def verify(socket, config):
 
     assert peer_id == subtlv[kTLVType_Identifier]
 
-    info = parsed[kTLVType_PublicKey] + subtlv[kTLVType_Identifier] + randpk.public_key().public_bytes()
+    info = parsed[kTLVType_PublicKey] + subtlv[kTLVType_Identifier] + public_key_bytes
     peer_public_key.verify(subtlv[kTLVType_Signature], info)
 
     device_id = bytes(config['device_id'], 'utf-8')
-    info = randpk.public_key().public_bytes() + device_id + parsed[kTLVType_PublicKey]
+    info = public_key_bytes + device_id + parsed[kTLVType_PublicKey]
     subtlv = tlv_build({kTLVType_Identifier: device_id, kTLVType_Signature: ltsk.sign(info)})
 
     encrypted = cha_cha_poly.encrypt(b"\0\0\0\0PV-Msg03", subtlv, None)
